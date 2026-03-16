@@ -18,18 +18,21 @@ import './App.css'
 // ---------------------------------------------------------------------------
 
 type JobStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+type EdgeType  = 'direct' | 'relative'
+
+interface RawNode { id: string; label: string }
+interface RawEdge { source: string; target: string; type: EdgeType }
 
 interface GraphData {
-  nodes: { id: string; label: string }[]
-  edges: { source: string; target: string }[]
+  nodes: RawNode[]
+  edges: RawEdge[]
 }
 
 interface JobResponse {
-  job_id: string
-  status: JobStatus
-  repo_url: string
-  graph_data?: GraphData
-  summary?: string
+  job_id:        string
+  status:        JobStatus
+  repo_url:      string
+  graph_data?:   GraphData
   error_message?: string
 }
 
@@ -40,42 +43,43 @@ interface JobResponse {
 const NODE_WIDTH  = 200
 const NODE_HEIGHT = 40
 
-function applyDagreLayout(
-  nodes: GraphData['nodes'],
-  edges: GraphData['edges'],
-): { rfNodes: Node[]; rfEdges: Edge[] } {
+function applyDagreLayout(nodes: RawNode[], edges: RawEdge[]) {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 100 })
 
   nodes.forEach(n => g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT }))
   edges.forEach(e => g.setEdge(e.source, e.target))
-
   dagre.layout(g)
 
   const rfNodes: Node[] = nodes.map(n => {
     const pos = g.node(n.id)
     return {
-      id: n.id,
-      data: { label: n.label },
+      id:       n.id,
+      data:     { label: n.label },
       position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 },
       style: {
-        background: '#1a202c',
-        border: '1px solid #4f8ef7',
-        color: '#e2e8f0',
+        background:  '#1a202c',
+        border:      '1px solid #4f8ef7',
+        color:       '#e2e8f0',
         borderRadius: 6,
-        fontSize: 11,
-        padding: '6px 10px',
-        width: NODE_WIDTH,
+        fontSize:    11,
+        padding:     '6px 10px',
+        width:       NODE_WIDTH,
       },
     }
   })
 
   const rfEdges: Edge[] = edges.map((e, i) => ({
-    id: `e-${i}`,
+    id:     `e-${i}`,
     source: e.source,
     target: e.target,
-    style: { stroke: '#4f8ef7', strokeWidth: 1.5 },
+    // Direct imports: solid blue. Relative imports: dashed green.
+    style: e.type === 'relative'
+      ? { stroke: '#68d391', strokeWidth: 1.5, strokeDasharray: '6 3' }
+      : { stroke: '#4f8ef7', strokeWidth: 1.5 },
+    label: e.type === 'relative' ? 'rel' : undefined,
+    labelStyle: { fill: '#68d391', fontSize: 9 },
   }))
 
   return { rfNodes, rfEdges }
@@ -96,18 +100,19 @@ export default function App() {
   const [jobId, setJobId]               = useState<string | null>(null)
   const [jobStatus, setJobStatus]       = useState<JobStatus | null>(null)
   const [graphData, setGraphData]       = useState<GraphData | null>(null)
-  const [summary, setSummary]           = useState<string | null>(null)
+  const [summary, setSummary]           = useState('')
+  const [summaryDone, setSummaryDone]   = useState(false)
   const [errorMsg, setErrorMsg]         = useState<string | null>(null)
   const [submitting, setSubmitting]     = useState(false)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const esRef   = useRef<EventSource | null>(null)
+
+  // ── Polling ──────────────────────────────────────────────────────────────
 
   const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
   }, [])
 
   const pollJob = useCallback(async (id: string) => {
@@ -118,7 +123,6 @@ export default function App() {
 
       if (data.status === 'COMPLETED') {
         setGraphData(data.graph_data ?? null)
-        setSummary(data.summary ?? null)
         stopPolling()
       } else if (data.status === 'FAILED') {
         setErrorMsg(data.error_message ?? 'Analysis failed.')
@@ -137,6 +141,39 @@ export default function App() {
     return stopPolling
   }, [jobId, pollJob, stopPolling])
 
+  // ── SSE summary stream ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (jobStatus !== 'COMPLETED' || !jobId) return
+
+    // Close any previous EventSource.
+    esRef.current?.close()
+
+    const es = new EventSource(`/api/jobs/${jobId}/summary-stream/`)
+    esRef.current = es
+
+    es.onmessage = (evt) => {
+      const chunk = evt.data.replace(/\\n/g, '\n')
+      setSummary(prev => prev + chunk)
+    }
+
+    es.addEventListener('done', () => {
+      setSummaryDone(true)
+      es.close()
+    })
+
+    es.addEventListener('error', (evt) => {
+      const msg = (evt as MessageEvent).data ?? 'Stream error.'
+      setSummary(prev => prev || `[Summary unavailable: ${msg}]`)
+      setSummaryDone(true)
+      es.close()
+    })
+
+    return () => es.close()
+  }, [jobStatus, jobId])
+
+  // ── Submit ────────────────────────────────────────────────────────────────
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!repoUrl.trim()) return
@@ -144,16 +181,18 @@ export default function App() {
     setJobId(null)
     setJobStatus(null)
     setGraphData(null)
-    setSummary(null)
+    setSummary('')
+    setSummaryDone(false)
     setErrorMsg(null)
     setSelectedNode(null)
     setSubmitting(true)
+    esRef.current?.close()
 
     try {
       const res = await fetch('/api/jobs/', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repo_url: repoUrl.trim() }),
+        body:    JSON.stringify({ repo_url: repoUrl.trim() }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -169,32 +208,37 @@ export default function App() {
     }
   }
 
-  // Node click — derive imports from raw graph edges
+  // ── Node click ────────────────────────────────────────────────────────────
+
   const handleNodeClick: NodeMouseHandler = useCallback((_evt, node) => {
-    setSelectedNode(prev => (prev === node.id ? null : node.id))
+    setSelectedNode(prev => prev === node.id ? null : node.id)
   }, [])
 
-  const nodeImports: string[] = selectedNode && graphData
-    ? graphData.edges
-        .filter(e => e.source === selectedNode)
-        .map(e => e.target)
+  const nodeImports = selectedNode && graphData
+    ? graphData.edges.filter(e => e.source === selectedNode).map(e => ({
+        target: e.target,
+        type:   e.type,
+      }))
     : []
+
+  // ── Graph nodes/edges ─────────────────────────────────────────────────────
 
   const { rfNodes, rfEdges } = graphData
     ? applyDagreLayout(graphData.nodes, graphData.edges)
     : { rfNodes: [], rfEdges: [] }
 
-  // Highlight selected node
   const styledNodes = rfNodes.map(n => ({
     ...n,
     style: {
       ...n.style,
-      border: n.id === selectedNode ? '2px solid #f6e05e' : '1px solid #4f8ef7',
+      border:     n.id === selectedNode ? '2px solid #f6e05e' : '1px solid #4f8ef7',
       background: n.id === selectedNode ? '#2d3748' : '#1a202c',
     },
   }))
 
   const isBusy = submitting || jobStatus === 'PENDING' || jobStatus === 'PROCESSING'
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="app">
@@ -223,15 +267,23 @@ export default function App() {
       )}
 
       {errorMsg && (
-        <div className="error-box">
-          <strong>Error:</strong> {errorMsg}
-        </div>
+        <div className="error-box"><strong>Error:</strong> {errorMsg}</div>
       )}
 
       {jobStatus === 'COMPLETED' && graphData && graphData.nodes.length > 0 && (
         <div className="results">
 
-          {/* Graph + detail panel side by side */}
+          {/* Legend */}
+          <div className="legend">
+            <span className="legend-item">
+              <span className="legend-line solid" /> Direct import
+            </span>
+            <span className="legend-item">
+              <span className="legend-line dashed" /> Relative import
+            </span>
+          </div>
+
+          {/* Graph + detail panel */}
           <div className="graph-row">
             <div className="graph-container">
               <ReactFlow
@@ -256,8 +308,15 @@ export default function App() {
                 <p className="detail-label">Imports ({nodeImports.length})</p>
                 {nodeImports.length > 0 ? (
                   <ul className="import-list">
-                    {nodeImports.map(dep => (
-                      <li key={dep} onClick={() => setSelectedNode(dep)}>{dep}</li>
+                    {nodeImports.map(({ target, type }) => (
+                      <li
+                        key={target}
+                        className={type}
+                        onClick={() => setSelectedNode(target)}
+                      >
+                        {target}
+                        <span className="import-type-badge">{type}</span>
+                      </li>
                     ))}
                   </ul>
                 ) : (
@@ -267,11 +326,14 @@ export default function App() {
             )}
           </div>
 
-          {/* LLM summary */}
-          {summary && (
+          {/* LLM summary — streams in progressively */}
+          {(summary || !summaryDone) && (
             <div className="summary-box">
               <h2>🧠 Architectural Summary</h2>
-              <p>{summary}</p>
+              <p>
+                {summary}
+                {!summaryDone && <span className="cursor-blink">▌</span>}
+              </p>
             </div>
           )}
         </div>

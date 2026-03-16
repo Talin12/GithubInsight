@@ -1,12 +1,19 @@
 # backend/core/settings.py
 
 from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-et%d*98v_(198yv(g3(ibw@v_44itu7+cspe=*p3ll*yh7x1_!'
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-et%d*98v_(198yv(g3(ibw@v_44itu7+cspe=*p3ll*yh7x1_!'
+)
 
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = []
 
@@ -69,23 +76,23 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
-
 STATIC_URL = 'static/'
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ---------------------------------------------------------------------------
-# CORS — allow the Vite dev server to reach the API
-# ---------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
 ]
 
 # ---------------------------------------------------------------------------
+# Redis
+# ---------------------------------------------------------------------------
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+
+# ---------------------------------------------------------------------------
 # Celery
 # ---------------------------------------------------------------------------
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
