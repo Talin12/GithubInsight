@@ -24,9 +24,21 @@ def submit_job(request):
     if not repo_url:
         return Response({'error': 'repo_url is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Cache check — return existing completed job if available.
+    existing = AnalysisJob.objects.filter(
+        repo_url=repo_url,
+        status=AnalysisJob.Status.COMPLETED,
+    ).order_by('-created_at').first()
+
+    if existing:
+        return Response(
+            {'job_id': str(existing.id), 'cached': True},
+            status=status.HTTP_200_OK,
+        )
+
     job = AnalysisJob.objects.create(repo_url=repo_url)
     run_analysis.delay(str(job.id))
-    return Response({'job_id': str(job.id)}, status=status.HTTP_202_ACCEPTED)
+    return Response({'job_id': str(job.id), 'cached': False}, status=status.HTTP_202_ACCEPTED)
 
 
 @api_view(['GET'])
@@ -54,23 +66,16 @@ def poll_job(request, job_id):
 
 
 def stream_summary(request, job_id):
-    """
-    GET /api/jobs/<job_id>/summary-stream/
-
-    SSE endpoint. Blocks on the Redis list `summary_stream:<job_id>`,
-    yielding each chunk as a server-sent event until __DONE__ or __ERROR__.
-    """
+    """GET /api/jobs/<job_id>/summary-stream/"""
     r = _get_redis()
     stream_key = f'summary_stream:{job_id}'
 
     def event_stream():
-        timeout_at = time.time() + 300  # 5-minute hard timeout
+        timeout_at = time.time() + 300
 
         while time.time() < timeout_at:
-            # BLPOP blocks up to 5 s waiting for the next chunk.
             result = r.blpop(stream_key, timeout=5)
             if result is None:
-                # Heartbeat to keep the connection alive.
                 yield 'event: heartbeat\ndata: {}\n\n'
                 continue
 
@@ -80,17 +85,12 @@ def stream_summary(request, job_id):
             if chunk == '__DONE__':
                 yield 'event: done\ndata: {}\n\n'
                 return
-
             if chunk.startswith('__ERROR__:'):
-                msg = chunk[len('__ERROR__:'):]
-                yield f'event: error\ndata: {msg}\n\n'
+                yield f'event: error\ndata: {chunk[len("__ERROR__:"):]}\n\n'
                 return
 
-            # Escape newlines so SSE framing stays intact.
-            safe = chunk.replace('\n', '\\n')
-            yield f'data: {safe}\n\n'
+            yield f'data: {chunk.replace(chr(10), "\\n")}\n\n'
 
-        # Timed out.
         yield 'event: error\ndata: Stream timed out.\n\n'
 
     response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
