@@ -1,42 +1,93 @@
-#root {
-  max-width: 1280px;
+/* frontend/src/App.css */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Inter, system-ui, sans-serif;
+  background: #0f1117;
+  color: #e2e8f0;
+}
+
+.app {
+  max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
-  text-align: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+h1 {
+  font-size: 1.8rem;
+  margin-bottom: 1.5rem;
+  color: #fff;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.form {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.form input {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #2d3748;
+  background: #1a202c;
+  color: #e2e8f0;
+  font-size: 0.95rem;
 }
 
-.card {
-  padding: 2em;
+.form input:focus {
+  outline: 2px solid #4f8ef7;
 }
 
-.read-the-docs {
-  color: #888;
+.form button {
+  padding: 0.6rem 1.4rem;
+  border-radius: 6px;
+  border: none;
+  background: #4f8ef7;
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-badge.PENDING    { background: #2d3748; color: #a0aec0; }
+.status-badge.PROCESSING { background: #2a4365; color: #63b3ed; }
+.status-badge.COMPLETED  { background: #1c4532; color: #68d391; }
+.status-badge.FAILED     { background: #4a1e1e; color: #fc8181; }
+
+.error-box {
+  background: #4a1e1e;
+  border: 1px solid #fc8181;
+  border-radius: 6px;
+  padding: 1rem;
+  color: #fc8181;
+  font-size: 0.9rem;
+}
+
+.graph-container {
+  width: 100%;
+  height: 600px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #2d3748;
 }
