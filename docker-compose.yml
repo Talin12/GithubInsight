@@ -9,6 +9,22 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: backend/.env
+    environment:
+      POSTGRES_DB:       ${DB_NAME:-repoinsight}
+      POSTGRES_USER:     ${DB_USER:-repoinsight}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-repoinsight}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-repoinsight}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   django:
     build:
       context: .
@@ -19,8 +35,11 @@ services:
     env_file: backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
+      DB_HOST:   postgres
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 
@@ -32,8 +51,11 @@ services:
     env_file: backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
+      DB_HOST:   postgres
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 
@@ -46,3 +68,6 @@ services:
     depends_on:
       - django
     restart: unless-stopped
+
+volumes:
+  postgres_data:

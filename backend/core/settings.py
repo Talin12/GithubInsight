@@ -13,9 +13,9 @@ SECRET_KEY = os.environ.get(
     'django-insecure-et%d*98v_(198yv(g3(ibw@v_44itu7+cspe=*p3ll*yh7x1_!'
 )
 
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost 127.0.0.1').split()
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -58,10 +58,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
+# ---------------------------------------------------------------------------
+# Database — PostgreSQL
+# ---------------------------------------------------------------------------
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE':   'django.db.backends.postgresql',
+        'NAME':     os.environ.get('DB_NAME',     'repoinsight'),
+        'USER':     os.environ.get('DB_USER',     'repoinsight'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'repoinsight'),
+        'HOST':     os.environ.get('DB_HOST',     'localhost'),
+        'PORT':     os.environ.get('DB_PORT',     '5432'),
     }
 }
 
@@ -79,9 +86,9 @@ USE_TZ = True
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-]
+CORS_ALLOWED_ORIGINS = os.environ.get(
+    'CORS_ALLOWED_ORIGINS', 'http://localhost:5173'
+).split()
 
 # ---------------------------------------------------------------------------
 # Redis
@@ -91,9 +98,9 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 # ---------------------------------------------------------------------------
 # Celery
 # ---------------------------------------------------------------------------
-CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = REDIS_URL
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
+CELERY_BROKER_URL        = REDIS_URL
+CELERY_RESULT_BACKEND    = REDIS_URL
+CELERY_ACCEPT_CONTENT    = ['json']
+CELERY_TASK_SERIALIZER   = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = TIME_ZONE
+CELERY_TIMEZONE          = TIME_ZONE
